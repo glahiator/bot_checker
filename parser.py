@@ -1,3 +1,4 @@
+import configparser
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
@@ -6,6 +7,32 @@ from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium import webdriver  
 import time, json
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+
+
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+import os
+
+storage = MemoryStorage()
+config = configparser.ConfigParser()
+config.read('config.ini')
+API_TOKEN = config['TELEGRAM']['TOKEN']
+# Initialize bot and dispatcher
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot,storage = storage)
+
+class FSMAdmin( StatesGroup ):
+    radius = State()
+    low_price = State()
+    high_price = State()    
+
+client_id = 0
+low_price = 0
+max_price = 99999
+radius = 19
+
 
 def get_browser_options() :
     _options = webdriver.ChromeOptions()
@@ -53,16 +80,16 @@ def get_page():
         actions.perform()
         time.sleep(1)
         diametr = browser.find_element(by=By.XPATH, value="//*[@id='app']/div/div[3]/div[3]/div[1]/div/div[2]/div[1]/form/div[6]/div/div[2]/div/div/div/div/label/input")  
-        diametr.send_keys("19")
+        diametr.send_keys(radius)
         actions.move_to_element_with_offset(diametr, 10, 60)
         actions.click()
         actions.perform()
         time.sleep(1)
 
         price_min = browser.find_element(by=By.XPATH, value= "//*[@id='app']/div/div[3]/div[3]/div[1]/div/div[2]/div[1]/form/div[11]/div/div[2]/div/div/div/div/div/div/label[1]/input")
-        price_min.send_keys(5000)
+        price_min.send_keys(low_price)
         price_max = browser.find_element(by=By.XPATH, value= "//*[@id='app']/div/div[3]/div[3]/div[1]/div/div[2]/div[1]/form/div[11]/div/div[2]/div/div/div/div/div/div/label[2]/input")
-        price_max.send_keys(15000)        
+        price_max.send_keys(max_price)        
         time.sleep(1)
 
         pivot = browser.find_element(by=By.XPATH, value="//*[@id='app']/div/div[3]/div[3]/div[1]/div/div[2]/div[1]/form/div[15]/div")        
@@ -114,7 +141,7 @@ def parse_page( page ):
                                 elif "iva-item-dateInfoStep" in class_name[0]:
                                     item["date"] = b.get_text()
                         items.append(item)        
-
+    return items[:5]
     for it in items:
         print(f'{it["title"]}')
         print(f'{it["price"]}')
@@ -122,10 +149,49 @@ def parse_page( page ):
         print(f'{it["href"]}')
         print("----------------------------------------------")
 
+@dp.message_handler(commands=['start', 'help'])
+async def send_welcome(message: types.Message):    
+    await message.answer("Выберите комманду search для начала работы")
+
+@dp.message_handler(commands=['search'], state=None )
+async def send_search(message: types.Message):  
+    await FSMAdmin.radius.set()  
+    await message.answer("Укажите радиус шин?")
+
+@dp.message_handler( state=FSMAdmin.radius )
+async def set_radius( message : types.Message, state: FSMContext ):
+    global radius
+    radius = message.text
+    await FSMAdmin.next()
+    await message.answer('Введите нижнюю границу диапазона цены')
+
+
+@dp.message_handler( state=FSMAdmin.low_price )
+async def set_low_price( message : types.Message, state: FSMContext ):
+    global low_price
+    low_price = message.text
+    await FSMAdmin.next()
+    await message.answer('Введите верхнюю границу диапазона цены')
+
+@dp.message_handler( state=FSMAdmin.high_price )
+async def set_high_price( message : types.Message, state: FSMContext ):
+    global max_price
+    max_price = message.text
+    await state.finish()
+    await message.answer('Ждите результаты...')
+    page = get_page()
+    items = parse_page(page)
+    for it in items:
+        print(f'{it["title"]}')
+        print(f'{it["price"]}')
+        print(f'{it["date"]}')
+        print(f'{it["href"]}')
+        await message.answer(f'{it["date"]}\nhttps://www.avito.ru{it["href"]}')
+        time.sleep(1)
+    
 
 def main():
-    page = get_page()
-    parse_page(page)
+    executor.start_polling(dp, skip_updates=True)
 
 
 if __name__ == "__main__":
