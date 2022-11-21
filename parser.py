@@ -24,7 +24,7 @@ bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot,storage = storage)
 
 # add district ?district=
-
+# add metro &metro=
 class FSMAdmin( StatesGroup ):
     radius = State()
     low_price = State()
