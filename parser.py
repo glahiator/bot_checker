@@ -23,6 +23,8 @@ API_TOKEN = config['TELEGRAM']['TOKEN']
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot,storage = storage)
 
+# add district ?district=
+
 class FSMAdmin( StatesGroup ):
     radius = State()
     low_price = State()
